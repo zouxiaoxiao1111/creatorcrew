@@ -1,30 +1,24 @@
 import type { BotTemplate } from "@creatorcrew/agents";
 import { BotTemplateSchema, runBot } from "@creatorcrew/agents";
-import {
-  QUEUES,
-  parseTargetList,
-  type BotRunJob,
-  type ModelTier,
-  type TierMapping,
-} from "@creatorcrew/core";
+import { QUEUES, type BotRunJob } from "@creatorcrew/core";
 import {
   and,
+  botSpendToday,
   botTemplates,
   bots,
+  createProviderRepo,
   draftVersions,
   drafts,
   eq,
-  gte,
   routines,
   runSteps,
   runs,
-  sql,
   topics,
   usageEvents,
   workspaces,
   type Database,
 } from "@creatorcrew/db";
-import { LLMRouter, providersFromEnv } from "@creatorcrew/llm";
+import { LLMRouter, resolveLLMConfig } from "@creatorcrew/llm";
 import type PgBoss from "pg-boss";
 import { log } from "./log";
 import { toDraft, toTopics } from "./outputs";
@@ -32,17 +26,15 @@ import { buildTools } from "./tools";
 
 type Env = Record<string, string | undefined>;
 
-/** 档位映射：workspace 设置优先，其次是环境变量 CC_TIER_*。 */
-export function resolveTierMapping(settings: TierMapping | undefined, env: Env): TierMapping {
-  const fromEnv: TierMapping = {};
-  for (const tier of ["cheap", "mid", "strong", "local"] as ModelTier[]) {
-    const list = parseTargetList(env[`CC_TIER_${tier.toUpperCase()}`]);
-    if (list.length) fromEnv[tier] = list;
-  }
-  return { ...fromEnv, ...settings };
+export interface JobContext {
+  env: Env;
+  /** CC_SECRET_KEY，用于解密设置页保存的 API Key */
+  masterKey: string;
+  timezone: string;
 }
 
-export async function handleBotRun(db: Database, job: BotRunJob, env: Env): Promise<void> {
+export async function handleBotRun(db: Database, job: BotRunJob, ctx: JobContext): Promise<void> {
+  const { env } = ctx;
   const { runId, botId, workspaceId } = job;
   const [row] = await db
     .select({ bot: bots, template: botTemplates, ws: workspaces })
@@ -79,9 +71,24 @@ export async function handleBotRun(db: Database, job: BotRunJob, env: Env): Prom
   let totalCost = 0;
   let hasCost = false;
 
+  // Provider：数据库（设置页保存的加密凭据）优先，环境变量兜底
+  const dbProviders = await createProviderRepo(db, ctx.masterKey).loadDecrypted(
+    workspaceId,
+    (name, err) =>
+      log.error(
+        { provider: name, err: err.message },
+        "无法解密 Provider 的 API Key（CC_SECRET_KEY 是否变更？）",
+      ),
+  );
+  const llm = resolveLLMConfig({
+    dbConfigs: dbProviders.map((p) => ({ ...p, source: "db" as const })),
+    explicitTiers: settings.tiers,
+    env,
+  });
+
   const router = new LLMRouter({
-    providers: providersFromEnv(env),
-    mapping: resolveTierMapping(settings.tiers, env),
+    providers: llm.providers,
+    mapping: llm.mapping,
     prices: settings.prices,
     onUsage: async (u) => {
       totalIn += u.inputTokens;
@@ -107,18 +114,14 @@ export async function handleBotRun(db: Database, job: BotRunJob, env: Env): Prom
     },
   });
 
-  // 单个 Routine 的预算上限：v0.1 按「该 Bot 当天累计花费 ≤ budget_usd」理解（需配置单价表才生效）
+  // 预算：routine.budget_usd = 该 Bot 每天（按 CC_TIMEZONE）的花费上限，用完后自动降一档（需配置单价表才生效）
   const [routine] = await db.select().from(routines).where(eq(routines.botId, botId)).limit(1);
-  let budget: { spentUsd: number; limitUsd: number } | undefined;
-  if (routine?.budgetUsd) {
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
-    const [spent] = await db
-      .select({ v: sql<string | null>`sum(${usageEvents.costUsd})` })
-      .from(usageEvents)
-      .where(and(eq(usageEvents.botId, botId), gte(usageEvents.createdAt, dayStart)));
-    budget = { spentUsd: Number(spent?.v ?? 0), limitUsd: Number(routine.budgetUsd) };
-  }
+  const budget = routine?.budgetUsd
+    ? {
+        spentUsd: await botSpendToday(db, botId, ctx.timezone),
+        limitUsd: Number(routine.budgetUsd),
+      }
+    : undefined;
 
   let idx = 0;
   const result = await runBot(template, {

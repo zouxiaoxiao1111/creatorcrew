@@ -97,3 +97,26 @@ describe("密钥加密", () => {
     expect(() => decryptSecret(ct, "another-wrong-master-key!!")).toThrow();
   });
 });
+
+describe("密钥脱敏", () => {
+  it("只保留后 4 位", async () => {
+    const { maskSecret } = await import("../src");
+    expect(maskSecret("sk-abcdefghijklmnop1234")).toBe("****1234");
+    expect(maskSecret("abc")).toBe("****");
+    expect(maskSecret("sk-abcdefghijklmnop1234")).not.toContain("abcdef");
+  });
+
+  it("同一明文每次加密结果不同（随机 IV），篡改密文会解密失败", async () => {
+    const { decryptSecret, encryptSecret } = await import("../src");
+    const key = "another-master-key-for-tests-123";
+    const a = encryptSecret("sk-same-value-0000", key);
+    const b = encryptSecret("sk-same-value-0000", key);
+    expect(a).not.toBe(b);
+    const parts = a.split(":");
+    const ct = Buffer.from(parts[3]!, "base64");
+    ct[0] = ct[0]! ^ 0xff;
+    parts[3] = ct.toString("base64");
+    expect(() => decryptSecret(parts.join(":"), key)).toThrow();
+    expect(decryptSecret(b, key)).toBe("sk-same-value-0000");
+  });
+});

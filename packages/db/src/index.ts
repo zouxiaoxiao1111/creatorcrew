@@ -1,6 +1,10 @@
 export * as schema from "./schema";
 export * from "./schema";
+export * from "./types";
 export * from "./client";
 export * from "./migrate";
 export * from "./seed";
+export * from "./auth";
+export * from "./providers";
+export * from "./usage";
 export { and, asc, desc, eq, gte, ilike, inArray, isNull, or, sql } from "drizzle-orm";

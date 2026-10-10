@@ -1,4 +1,4 @@
-import { createOpenAICompatibleProvider } from "./openai-compatible";
+import { buildProviders, envProviderConfigs } from "./providers";
 import type { LLMProvider } from "./types";
 
 type EnvLike = Record<string, string | undefined>;
@@ -10,36 +10,12 @@ export interface ProviderInfo {
   baseUrl: string;
 }
 
-/**
- * 根据环境变量创建内置 Provider。没有配置 Key 的 Provider 不会被创建。
- * TODO(v0.1/W2)：支持在 UI 里配置 Key（加密存进 secret 表），以及 Anthropic / Gemini 原生接口。
- */
+/** 只用环境变量创建 Provider（不读数据库）。worker 请使用 resolveLLMConfig()，它会优先读数据库。 */
 export function providersFromEnv(env: EnvLike = process.env): Record<string, LLMProvider> {
-  const providers: Record<string, LLMProvider> = {};
-  if (env.OPENAI_API_KEY) {
-    providers.openai = createOpenAICompatibleProvider({
-      id: "openai",
-      baseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-      apiKey: env.OPENAI_API_KEY,
-    });
-  }
-  if (env.OPENROUTER_API_KEY) {
-    providers.openrouter = createOpenAICompatibleProvider({
-      id: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      apiKey: env.OPENROUTER_API_KEY,
-      headers: { "X-Title": "CreatorCrew" },
-    });
-  }
-  if (env.OLLAMA_BASE_URL) {
-    providers.ollama = createOpenAICompatibleProvider({
-      id: "ollama",
-      baseUrl: env.OLLAMA_BASE_URL,
-    });
-  }
-  return providers;
+  return buildProviders(envProviderConfigs(env));
 }
 
+/** 环境变量里内置 Provider 的配置状态（设置页展示用，不包含 Key）。 */
 export function describeProviders(env: EnvLike = process.env): ProviderInfo[] {
   return [
     {

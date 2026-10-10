@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { resolveTierMapping } from "../src/jobs";
 import { toDraft, toTopics } from "../src/outputs";
 
 describe("toDraft", () => {
@@ -32,16 +31,5 @@ describe("toTopics", () => {
     });
     expect(list).toEqual([{ title: "A", angle: null, reason: "r", urls: ["u"], score: "9.50" }]);
     expect(toTopics("不是 JSON")).toEqual([]);
-  });
-});
-
-describe("resolveTierMapping", () => {
-  it("workspace 设置覆盖环境变量", () => {
-    const m = resolveTierMapping(
-      { strong: [{ provider: "openrouter", model: "x" }] },
-      { CC_TIER_CHEAP: "openai:a", CC_TIER_STRONG: "openai:b" },
-    );
-    expect(m.cheap).toEqual([{ provider: "openai", model: "a" }]);
-    expect(m.strong).toEqual([{ provider: "openrouter", model: "x" }]);
   });
 });

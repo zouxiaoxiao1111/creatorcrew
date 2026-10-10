@@ -1,10 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import type * as schemaNs from "./schema";
+import type { AnyDb } from "./types";
 import { botTemplates, bots, routines, workspaces } from "./schema";
-
-/** 兼容 postgres-js 和 PGlite（测试）两种驱动 */
-type AnyDb = PgDatabase<PgQueryResultHKT, typeof schemaNs>;
 
 export interface TemplateSeed {
   slug: string;

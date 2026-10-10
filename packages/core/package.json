@@ -8,7 +8,9 @@
     ".": "./src/index.ts",
     "./domain": "./src/domain.ts",
     "./edition": "./src/edition.ts",
-    "./review": "./src/review.ts"
+    "./review": "./src/review.ts",
+    "./auth": "./src/auth.ts",
+    "./crypto": "./src/crypto.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

@@ -1,6 +1,6 @@
 import { loadOfficialTemplates } from "@creatorcrew/agents";
 import { parseEnv } from "@creatorcrew/config";
-import { QUEUES, getFeatures, loadEE, type BotRunJob } from "@creatorcrew/core";
+import { QUEUES, assertSecretKey, getFeatures, loadEE, type BotRunJob } from "@creatorcrew/core";
 import { closeDb, ensureDefaultWorkspace, getDb, runMigrations } from "@creatorcrew/db";
 import PgBoss from "pg-boss";
 import { enqueueRoutineRun, handleBotRun, syncRoutines } from "./jobs";
@@ -15,8 +15,12 @@ async function main() {
     log.error("缺少 DATABASE_URL，worker 无法启动");
     process.exit(1);
   }
-  if (!env.CC_SECRET_KEY && env.NODE_ENV === "production") {
-    log.warn("没有设置 CC_SECRET_KEY，密钥加密存储功能不可用");
+  let masterKey: string;
+  try {
+    masterKey = assertSecretKey(process.env);
+  } catch (err) {
+    log.error((err as Error).message);
+    process.exit(1);
   }
 
   // 在线版的商业功能（计费等）在 ee/ 中，按需加载；不存在时直接跳过
@@ -56,7 +60,7 @@ async function main() {
   await boss.work<BotRunJob>(QUEUES.botRun, { batchSize: 1 }, async ([job]) => {
     if (!job) return;
     log.info({ jobId: job.id, ...job.data }, "开始执行 Bot");
-    await handleBotRun(db, job.data, process.env);
+    await handleBotRun(db, job.data, { env: process.env, masterKey, timezone: env.CC_TIMEZONE });
   });
 
   const registered = new Set<string>();

@@ -75,6 +75,37 @@ export const users = pgTable("user", {
   createdAt: createdAt(),
 });
 
+/** 登录会话：id 是 token 的 SHA-256（不存明文 token）。 */
+export const sessions = pgTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    userAgent: text("user_agent"),
+    ip: text("ip"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("session_user_idx").on(t.userId)],
+);
+
+/** 第三方登录账号关联（在线版 OAuth / Magic link 预留，v0.1 未使用）。 */
+export const accounts = pgTable(
+  "account",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("account_provider_idx").on(t.provider, t.providerAccountId)],
+);
+
 export const memberships = pgTable(
   "membership",
   {
@@ -309,6 +340,33 @@ export const secrets = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("secret_ws_name_idx").on(t.workspaceId, t.name)],
+);
+
+/**
+ * 模型 Provider 凭据（在设置页保存）。API Key 加密后存在 secret 表，这里只引用。
+ * tier_models：这个 Provider 服务哪些档位，以及每个档位用哪个模型，例如 {"cheap":"m-small","strong":"m-large"}。
+ */
+export const llmProviders = pgTable(
+  "llm_provider",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    /** 在档位映射中引用的名字，例如 openai、openrouter、my-gateway */
+    name: text("name").notNull(),
+    kind: text("kind").notNull().default("openai_compatible"),
+    baseUrl: text("base_url").notNull(),
+    secretId: uuid("secret_id").references(() => secrets.id, { onDelete: "set null" }),
+    tierModels: jsonb("tier_models")
+      .$type<Partial<Record<(typeof MODEL_TIERS)[number], string>>>()
+      .notNull()
+      .default({}),
+    /** 同一档位有多个 Provider 时，数字越小越优先 */
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("llm_provider_ws_name_idx").on(t.workspaceId, t.name)],
 );
 
 export const connectorAccounts = pgTable("connector_account", {
