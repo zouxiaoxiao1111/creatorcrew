@@ -1,0 +1,32 @@
+# 社区模板示例：开头钩子改写（MIT）。可以照着这个格式贡献你自己的模板。
+apiVersion: creatorcrew/v1
+kind: Bot
+metadata:
+  name: hook-rewriter
+  displayName: 开头钩子改写
+  version: 0.1.0
+  author: community-example
+  description: 给一段开头写 5 个更抓人的版本，只改写结构和节奏，不照抄别人的原文。
+  tags: [写作, 钩子]
+  license: MIT
+spec:
+  persona: 你是一名擅长写开头钩子的编辑。
+  model:
+    tier: mid
+    fallback: [cheap]
+  inputs:
+    opening:
+      type: text
+      label: 原始开头
+      required: true
+  steps:
+    - id: rewrite
+      type: llm
+      output: json
+      prompt: |
+        把下面这段开头改写成 5 个版本（提问式、反常识、数字清单、场景代入、结果前置），
+        输出 JSON：{"hooks":[""]}
+
+        原始开头：{{ inputs.opening }}
+  output:
+    kind: text

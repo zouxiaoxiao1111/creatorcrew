@@ -1,0 +1,103 @@
+# 选题雷达：定时扫描关键词、对标账号、RSS 和灵感库，按收藏 / 互动排序给出选题清单 + 理由。
+apiVersion: creatorcrew/v1
+kind: Bot
+metadata:
+  name: topic-radar
+  displayName: 选题雷达
+  version: 0.1.0
+  author: official
+  description: 每天扫描 X 关键词、对标账号、RSS 和灵感库，挑出值得写的教程选题。
+  tags: [选题, 定时任务]
+  license: MIT
+spec:
+  persona: |
+    你是一名 AI 领域的选题编辑，只关注「可以出教程」的新功能、新工具和新玩法。
+    你判断选题的标准：时效性（越新越好）、可操作性（读者能照着做）、收藏潜力（工具书属性）。
+  instructions: |
+    只输出结构化结果，不要编造数据；没有数据支撑的判断要明确标注「推测」。
+    不要建议洗稿或照抄，只给出选题角度。
+  model:
+    tier: cheap
+    fallback: [mid]
+  tools: [rss.fetch, x.search, inspiration.search]
+  inputs:
+    keywords:
+      type: string[]
+      label: 关键词
+      default: ["Agent", "新功能", "提示词"]
+    benchmark_accounts:
+      type: string[]
+      label: 对标账号
+      default: []
+    rss_feeds:
+      type: string[]
+      label: RSS 订阅源
+      default: []
+    max_topics:
+      type: number
+      label: 选题数量
+      default: 10
+  steps:
+    - id: rss
+      type: tool
+      title: 抓取 RSS
+      tool: rss.fetch
+      with:
+        feeds: "{{ inputs.rss_feeds }}"
+        limit: 50
+    - id: x_posts
+      type: tool
+      title: 搜索 X（可选，需要 X API Token）
+      tool: x.search
+      optional: true
+      with:
+        keywords: "{{ inputs.keywords }}"
+        accounts: "{{ inputs.benchmark_accounts }}"
+        maxResults: 50
+    - id: inspirations
+      type: tool
+      title: 检索灵感库
+      tool: inspiration.search
+      optional: true
+      with:
+        query: "{{ inputs.keywords }}"
+        limit: 20
+    - id: shortlist
+      type: llm
+      title: 初筛
+      tier: cheap
+      output: json
+      prompt: |
+        下面是最近的素材（RSS、X 帖子、灵感库）。关键词：{{ inputs.keywords }}。
+        请筛出和关键词相关、适合做成教程的条目，去重后输出 JSON：
+        {"candidates":[{"title":"","url":"","why":"","engagement_hint":""}]}
+
+        RSS：{{ steps.rss.output }}
+        X：{{ steps.x_posts.output }}
+        灵感库：{{ steps.inspirations.output }}
+    - id: topics
+      type: llm
+      title: 生成选题清单
+      tier: mid
+      output: json
+      prompt: |
+        基于初筛结果，给出最多 {{ inputs.max_topics }} 个选题，按「收藏潜力」从高到低排序。
+        每个选题包含：标题建议、切入角度、理由、参考链接、时效（timely/evergreen）。
+        输出 JSON：{"topics":[{"title":"","angle":"","reason":"","urls":[],"freshness":"timely","score":0}]}
+
+        初筛结果：{{ steps.shortlist.output }}
+  output:
+    kind: topic_list
+    schema:
+      type: object
+      required: [topics]
+      properties:
+        topics:
+          type: array
+          items:
+            type: object
+            required: [title, reason]
+  routine:
+    cron: "0 8 * * *"
+    timezone: Asia/Shanghai
+    budget_usd: 0.5

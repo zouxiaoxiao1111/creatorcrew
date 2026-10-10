@@ -1,0 +1,66 @@
+# CreatorCrew 一键自部署：docker compose up -d
+# 必需：db + web + worker（web 和 worker 是同一个镜像）。Redis 不是必需项。
+name: creatorcrew
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  # TODO：发布后改为 ghcr.io/creatorcrew/creatorcrew:latest
+  image: ${CC_IMAGE:-creatorcrew:local}
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    CC_EDITION: ${CC_EDITION:-selfhost}
+    DATABASE_URL: postgres://creatorcrew:${PG_PASSWORD:-creatorcrew}@db:5432/creatorcrew
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: creatorcrew
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-creatorcrew}
+      POSTGRES_DB: creatorcrew
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U creatorcrew -d creatorcrew"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    <<: *app
+    command: ["web"]
+    ports:
+      - "${CC_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    <<: *app
+    command: ["worker"]
+
+  # 可选：本地模型。启用方式：docker compose --profile ollama up -d
+  # 然后在 .env 中设置 OLLAMA_BASE_URL=http://ollama:11434/v1
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+  # TODO(v0.2)：可选 profile —— minio（S3 兼容存储）、whisper（本地转写）
+
+volumes:
+  pgdata: {}
+  ollama: {}

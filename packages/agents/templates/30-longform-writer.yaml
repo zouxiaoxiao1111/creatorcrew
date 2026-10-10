@@ -1,0 +1,94 @@
+# 长文写作：选题 + 素材 + 风格档案 → 去 AI 味初稿、5 个标题备选、封面图提示词 → 进入人工审核。
+apiVersion: creatorcrew/v1
+kind: Bot
+metadata:
+  name: longform-writer
+  displayName: 长文写作
+  version: 0.1.0
+  author: official
+  description: 根据选题和灵感库素材写出「保姆级」长文初稿，必须经过人工审核才能导出。
+  tags: [写作, 长文, 审核]
+  license: MIT
+spec:
+  persona: |
+    你是一名资深的 AI 教程作者，擅长写「保姆级」长文：步骤清楚、可以照着做、附可复制的提示词。
+  instructions: |
+    写作规则（去 AI 味）：
+    - 不要用「在当今……的时代」「总而言之」「值得注意的是」这类套话；
+    - 多用短句、具体例子和真实操作步骤，少用形容词堆砌；
+    - 引用他人内容时附上来源链接，不洗稿、不照抄；
+    - 无法确认的事实标注「待核实」，交给人工审核。
+  model:
+    tier: strong
+    fallback: [mid]
+  tools: [inspiration.search]
+  inputs:
+    topic:
+      type: string
+      label: 选题
+      required: true
+    angle:
+      type: text
+      label: 切入角度
+    materials:
+      type: markdown
+      label: 补充素材
+      default: ""
+    style_profile:
+      type: markdown
+      label: 个人风格档案
+      default: "口语化、第一人称、每节一个小标题、结尾附提示词清单"
+    platform:
+      type: string
+      label: 目标平台
+      default: X 长文
+  steps:
+    - id: research
+      type: tool
+      title: 检索灵感库素材
+      tool: inspiration.search
+      optional: true
+      with:
+        query: "{{ inputs.topic }}"
+        limit: 10
+    - id: outline
+      type: llm
+      title: 列提纲
+      tier: mid
+      prompt: |
+        选题：{{ inputs.topic }}
+        角度：{{ inputs.angle }}
+        平台：{{ inputs.platform }}
+        素材：{{ inputs.materials }}
+        灵感库：{{ steps.research.output }}
+
+        请列出长文提纲（5-8 节），每节写一句要点，并标出需要放提示词或截图的位置。
+    - id: draft
+      type: llm
+      title: 写初稿
+      tier: strong
+      temperature: 0.7
+      prompt: |
+        按下面的提纲写完整长文（Markdown），遵守写作规则和个人风格档案。
+        风格档案：{{ inputs.style_profile }}
+        提纲：
+        {{ steps.outline.output }}
+    - id: packaging
+      type: llm
+      title: 标题与封面
+      tier: mid
+      output: json
+      prompt: |
+        为下面这篇长文给出 5 个标题备选（带「保姆级 / 大全 / 附提示词」等风格可选）和 1 条封面图提示词。
+        输出 JSON：{"titles":["","","","",""],"cover_prompt":""}
+
+        正文：
+        {{ steps.draft.output }}
+    - id: review
+      type: human_review
+      title: 人工审核
+      instructions: 检查事实、补充截图、润色语气；通过后才能导出。
+  output:
+    kind: draft
+  review:
+    required: true

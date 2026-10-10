@@ -1,0 +1,24 @@
+CreatorCrew Enterprise Edition (ee/) License — PLACEHOLDER
+
+Copyright (c) 2026 CreatorCrew authors. All rights reserved.
+
+THIS IS A PLACEHOLDER. The final commercial license terms for the code in
+this ee/ directory have not been published yet and are subject to legal
+review.
+
+Until the final terms are published:
+
+1. The source code in this ee/ directory is made available for viewing and
+   evaluation only ("source-available").
+2. You may not use the code in this ee/ directory in production, offer it as
+   a hosted service, or redistribute it, without a separate written
+   commercial agreement with the copyright holders.
+3. This license applies ONLY to files inside the ee/ directory. All other
+   files in this repository are licensed under the GNU Affero General Public
+   License v3.0 (see /LICENSE), unless a file or directory states otherwise
+   (e.g. /templates is MIT).
+
+Removing the ee/ directory leaves a fully functional AGPL-3.0 build.
+
+TODO: replace this placeholder with the final commercial license text
+(reviewed by counsel) before the first public release.

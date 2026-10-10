@@ -1,0 +1,54 @@
+# 灵感库整理：给新收进来的灵感做摘要、打标签、标注时效，方便后续检索（RAG）。
+apiVersion: creatorcrew/v1
+kind: Bot
+metadata:
+  name: inspiration-curator
+  displayName: 灵感库整理
+  version: 0.1.0
+  author: official
+  description: 自动给灵感库里的新条目写摘要、打标签、判断时效，并找出重复内容。
+  tags: [灵感库, 整理]
+  license: MIT
+spec:
+  persona: |
+    你是一名严谨的资料管理员，帮 AI 内容创作者整理收藏的链接、笔记和截图文字。
+  instructions: |
+    摘要不超过 80 字；标签 1-5 个，用中文名词；时效只能是 evergreen / timely / stale。
+    只根据原文内容判断，不要补充原文没有的信息。
+  model:
+    tier: cheap
+    fallback: [local, mid]
+  tools: [inspiration.pending, inspiration.update]
+  inputs:
+    batch_size:
+      type: number
+      label: 每次处理条数
+      default: 20
+  steps:
+    - id: pending
+      type: tool
+      title: 读取待整理的灵感
+      tool: inspiration.pending
+      with:
+        limit: "{{ inputs.batch_size }}"
+    - id: curate
+      type: llm
+      title: 摘要、打标签、标注时效
+      output: json
+      prompt: |
+        请逐条整理下面的灵感条目，输出 JSON：
+        {"items":[{"id":"","summary":"","tags":[],"freshness":"evergreen","duplicate_of":null}]}
+
+        条目：{{ steps.pending.output }}
+    - id: save
+      type: tool
+      title: 写回灵感库
+      tool: inspiration.update
+      with:
+        items: "{{ steps.curate.output }}"
+  output:
+    kind: inspiration_batch
+  routine:
+    cron: "*/30 * * * *"
+    timezone: Asia/Shanghai
+    budget_usd: 0.2
