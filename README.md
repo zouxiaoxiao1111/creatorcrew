@@ -17,7 +17,8 @@
 | ✍️ **长文写作** | 选题 + 素材 + 个人风格档案 → 去 AI 味的「保姆级」初稿、5 个标题备选、封面图提示词 |
 | ✅ **人工审核流** | `草稿 → 待审核 → 需修改 → 已通过 → 已导出`；**任何导出都必须先经过你审核**（默认开启） |
 | 🎚 **按档位用模型** | 模板只声明 `cheap / mid / strong / local` 档位，你在设置里映射到具体模型；一个 Provider 报错或限流时按 fallback 链自动切换 |
-| 📊 **用量计量** | 每次模型调用记录 token 和估算费用（单价表由你配置，不硬编码），为预算告警打基础 |
+| 🔐 **登录与加密存储** | 自部署版单管理员账号（首次打开 `/setup` 创建，argon2id 哈希、会话存 Postgres）；模型 API Key 在网页里填写，用 `CC_SECRET_KEY` 以 AES-256-GCM 加密入库，页面只显示后 4 位 |
+| 📊 **用量与预算** | 每次模型调用记录 token 和估算费用（单价表由你配置，不硬编码）；「用量」页按 Bot 显示每天的花费和每日预算（`budget_usd`），超预算自动降档 |
 | 🧩 **模板即 YAML** | `bot.yaml` 可导入导出、可分享，社区模板使用 MIT 许可证，欢迎「抄作业」 |
 
 支持的模型 Provider：OpenAI 及任何 OpenAI 兼容接口、OpenRouter、Ollama（本地模型）。
@@ -30,16 +31,23 @@
 
 ```bash
 git clone <your-fork-url> creatorcrew && cd creatorcrew
-cp .env.example .env        # 至少填一个模型 Provider 的 Key，并设置 CC_SECRET_KEY
+cp .env.example .env
+# 必填：生成加密主密钥并写入 .env（用来加密保存 API Key；请备份，丢失后已保存的 Key 无法解密）
+echo "CC_SECRET_KEY=$(openssl rand -base64 32)" >> .env
 docker compose up -d        # 启动 db（Postgres + pgvector）、web、worker
 ```
 
+> 没有 `openssl` 时可以用：`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`。
+> 配置了数据库却缺少 `CC_SECRET_KEY` 时，web 和 worker 会拒绝启动并提示如何生成。
+
 打开 <http://localhost:3000>：
 
-1. 在 **设置** 里把模型档位映射到具体模型（例如 `openai:<模型名>`，每行一个，按顺序 fallback）；
-2. 在 **灵感库** 收进几条素材；
-3. 在 **工作台** 点「立即运行」，或开启「选题雷达」的定时任务；
-4. 在 **草稿审核** 里通过或退回稿件，通过后导出 Markdown。
+1. 首次打开会进入 **初始化页面**（`/setup`），创建唯一的管理员账号（邮箱 + 密码）；之后通过 `/login` 登录。除 `/api/health` 外，所有页面和 API 都需要登录；
+2. 在 **设置 → 模型 Provider 凭据** 里添加 Provider（名称、Base URL、API Key、它服务哪些档位以及对应的模型名）。Key 加密保存，页面只显示后 4 位；也可以继续用 `.env` 里的环境变量，页面保存的同名 Provider 优先；
+3. 在 **灵感库** 收进几条素材；
+4. 在 **工作台** 点「立即运行」，或开启「选题雷达」的定时任务；
+5. 在 **草稿审核** 里通过或退回稿件，通过后导出 Markdown；
+6. 在 **用量** 里查看每个 Bot 每天的 token / 费用和每日预算。
 
 首次启动会自动执行数据库 migration（启用 pgvector），并用官方模板创建 3 个 Bot。升级：`docker compose pull && docker compose up -d`（启动时自动 migrate）。
 
@@ -54,7 +62,7 @@ pnpm install
 pnpm dev            # 同时启动 web（http://localhost:3000）和 worker
 ```
 
-- 不设置 `DATABASE_URL` 时，Web 会进入 **演示模式**（内存示例数据），方便只改 UI；
+- 不设置 `DATABASE_URL` 时，Web 会进入 **演示模式**（内存示例数据、无需登录、不保存 API Key，页面顶部有明显提示），方便只改 UI；
 - 需要真实数据库时，可以只启动数据库：`docker compose up -d db`，然后设置
   `DATABASE_URL=postgres://creatorcrew:creatorcrew@localhost:5432/creatorcrew`。
 
@@ -122,8 +130,12 @@ creatorcrew/
 - [x] bot.yaml 模板解析 / 校验、Bot 运行时、pg-boss 队列与定时任务
 - [x] 官方模板：选题雷达、灵感库整理、长文写作（含人工审核）
 - [x] 工作台、灵感库、草稿审核、模型设置页面；导出 Markdown
-- [ ] 登录（Auth.js；自部署单管理员账号）
-- [ ] 在 UI 中加密保存 API Key、单价表与预算设置、额度看板
+- [x] 登录：自部署单管理员账号（`/setup` 首次初始化 → `/login`），argon2id 密码哈希，会话存 Postgres；在线版多用户 / OAuth 预留结构
+- [x] 在 UI 中加密保存模型 API Key（AES-256-GCM，只显示后 4 位），数据库配置优先于环境变量
+- [x] 用量页：每个 Bot 每天的 token / 费用对比每日预算
+- [ ] 单价表设置 UI（目前未配置单价时只统计 token，预算不生效）、预算设置 UI、超预算告警通知
+- [ ] 在线版：邮箱魔法链接 / GitHub / Google 登录、多用户工作区与邀请
+- [ ] 忘记密码：自部署版命令行重置工具
 - [ ] 灵感库：截图 OCR、向量检索（embedding 生成）、去重
 - [ ] 运行日志详情页（每一步的 Prompt 和输出）、批注后按段重写
 
@@ -144,6 +156,8 @@ creatorcrew/
 - **Bots as YAML templates** (`bot.yaml`): persona, steps, tools, model *tier* (`cheap / mid / strong / local`) and I/O schema. Templates never name concrete models.
 - **Model routing**: map each tier to an ordered chain of `provider:model` (OpenAI-compatible, OpenRouter, Ollama); automatic fallback on errors/rate limits; per-call token & cost metering.
 - **Human-in-the-loop**: drafts must be approved before export (on by default). No auto-posting in v0.1.
+- **Login & encrypted credentials**: self-host runs with a single admin account (created on first run at `/setup`, argon2id, DB-backed sessions). Provider API keys are entered in the UI and stored AES-256-GCM-encrypted with `CC_SECRET_KEY` (required; generate with `openssl rand -base64 32`); only the last 4 characters are ever shown. DB-configured providers take precedence over env vars.
+- **Usage & budgets**: a usage page shows each bot's daily tokens/cost against its per-bot, per-day `budget_usd`.
 - **One codebase, two editions**: `CC_EDITION=selfhost` (default, single tenant) or `cloud` (multi-tenant; commercial features live in `ee/` and are loaded at runtime only when present — the project builds and runs with `ee/` deleted).
 - **Stack**: pnpm + Turborepo, TypeScript (strict), Next.js App Router, Postgres 16 + pgvector, Drizzle, pg-boss (no Redis required), Docker.
 

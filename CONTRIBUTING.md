@@ -11,7 +11,7 @@
 ## 开发环境
 
 - Node.js 22+、pnpm 10、（可选）Docker
-- `pnpm install` 后用 `pnpm dev` 启动 web 和 worker；不设置 `DATABASE_URL` 时 web 使用演示数据
+- `pnpm install` 后用 `pnpm dev` 启动 web 和 worker；不设置 `DATABASE_URL` 时 web 使用演示数据（无需登录）；设置了 `DATABASE_URL` 时必须同时设置 `CC_SECRET_KEY`（`openssl rand -base64 32`）
 
 提交前请确保以下命令全部通过（CI 也会跑）：
 

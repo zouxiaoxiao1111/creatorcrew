@@ -93,6 +93,6 @@ jobs:
     needs: check
     steps:
       - uses: actions/checkout@v4
-      - run: cp .env.example .env
+      - run: cp .env.example .env && echo "CC_SECRET_KEY=ci-dummy-secret-key-not-for-production" >> .env
       - run: docker compose config --quiet
       - run: docker compose build
