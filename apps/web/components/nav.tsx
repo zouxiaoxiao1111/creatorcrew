@@ -8,6 +8,7 @@ const items = [
   { href: "/", label: "工作台", icon: "▦" },
   { href: "/inspiration", label: "灵感库", icon: "✦" },
   { href: "/review", label: "草稿审核", icon: "✓" },
+  { href: "/usage", label: "用量", icon: "◔" },
   { href: "/settings", label: "设置", icon: "⚙" },
 ];
 

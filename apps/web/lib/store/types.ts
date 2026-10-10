@@ -81,6 +81,49 @@ export interface DraftView {
   updatedAt: Date;
 }
 
+/** 设置页展示的 Provider 凭据：永远不包含明文 Key。 */
+export interface ProviderCredentialView {
+  id: string;
+  name: string;
+  baseUrl: string;
+  tierModels: Partial<Record<ModelTier, string>>;
+  priority: number;
+  enabled: boolean;
+  hasKey: boolean;
+  maskedKey: string | null;
+  updatedAt: Date;
+}
+
+export interface ProviderCredentialInput {
+  id?: string;
+  name: string;
+  baseUrl: string;
+  apiKey?: string;
+  clearKey?: boolean;
+  tierModels: Partial<Record<ModelTier, string>>;
+  priority?: number;
+  enabled?: boolean;
+}
+
+export interface DailyBotUsageView {
+  day: string;
+  botId: string | null;
+  botName: string;
+  calls: number;
+  failedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+}
+
+export interface UsageData {
+  timezone: string;
+  today: string;
+  days: number;
+  rows: DailyBotUsageView[];
+  budgets: { botId: string; botName: string; dailyBudgetUsd: number | null }[];
+}
+
 export interface ActionResult {
   ok: boolean;
   message: string;
@@ -101,4 +144,8 @@ export interface Store {
   markExported(id: string): Promise<void>;
   getSettings(): Promise<WorkspaceSettings>;
   saveTierMapping(tiers: TierMapping): Promise<ActionResult>;
+  listProviderCredentials(): Promise<ProviderCredentialView[]>;
+  saveProviderCredential(input: ProviderCredentialInput): Promise<ActionResult>;
+  deleteProviderCredential(id: string): Promise<ActionResult>;
+  getUsage(days: number): Promise<UsageData>;
 }

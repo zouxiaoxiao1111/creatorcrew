@@ -13,7 +13,7 @@ const nextConfig = {
     "@creatorcrew/ui",
     "@creatorcrew/config",
   ],
-  serverExternalPackages: ["pg-boss", "postgres"],
+  serverExternalPackages: ["pg-boss", "postgres", "@node-rs/argon2"],
   outputFileTracingRoot: repoRoot,
   turbopack: { root: repoRoot },
   poweredByHeader: false,

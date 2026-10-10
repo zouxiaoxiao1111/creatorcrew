@@ -13,7 +13,7 @@ import { runBotAction, toggleRoutineAction } from "./actions";
 import { Flash, pick, type SearchParams } from "@/components/flash";
 import { SubmitButton } from "@/components/submit-button";
 import { BOT_STATUS, RUN_STATUS, formatTime, formatTokens } from "@/lib/format";
-import { getStore } from "@/lib/store";
+import { authedStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ const TRIGGER_LABEL = {
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const { bots, stats, recentRuns } = await getStore().getDashboard();
+  const { bots, stats, recentRuns } = await (await authedStore("/")).getDashboard();
 
   return (
     <>

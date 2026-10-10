@@ -6,7 +6,7 @@ import { Flash, pick, type SearchParams } from "@/components/flash";
 import { SubmitButton } from "@/components/submit-button";
 import { features } from "@/lib/env";
 import { DRAFT_STATUS, formatTime } from "@/lib/format";
-import { getStore } from "@/lib/store";
+import { authedStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Searc
   const status = (DRAFT_STATUSES as readonly string[]).includes(raw)
     ? (raw as DraftStatus)
     : "in_review";
-  const store = getStore();
+  const store = await authedStore("/review");
   const [drafts, counts] = await Promise.all([
     store.listDrafts(status),
     store.countDraftsByStatus(),

@@ -1,6 +1,5 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { loadOfficialTemplates } from "@creatorcrew/agents";
 import type { TierMapping, WorkspaceSettings } from "@creatorcrew/core/domain";
 import { applyReviewDecision, type DraftStatus } from "@creatorcrew/core/review";
 import {
@@ -10,59 +9,42 @@ import {
   desc,
   draftVersions,
   drafts,
-  ensureDefaultWorkspace,
+  botBudgets,
+  createProviderRepo,
+  dailyUsageByBot,
   eq,
-  getDb,
   gte,
   ilike,
   inspirations,
   or,
   routines,
-  runMigrations,
   runs,
   sql,
   topics,
   usageEvents,
   workspaces,
-  type Database,
 } from "@creatorcrew/db";
+import { getDbContext } from "../db-context";
 import { enqueueBotRun } from "../queue";
 import type { BotView, DraftView, Store } from "./types";
 
-type Ctx = { db: Database; workspaceId: string; url: string };
+export function usageTimezone(): string {
+  const tz = process.env.CC_TIMEZONE || "Asia/Shanghai";
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz });
+    return tz;
+  } catch {
+    return "Asia/Shanghai";
+  }
+}
 
-const g = globalThis as unknown as { __ccDbCtx?: Promise<Ctx> };
-
-/**
- * 自部署是单租户：启动时自动 migrate，并确保有一个默认 workspace 和官方模板 Bot。
- * TODO(cloud)：多租户时从会话里取 workspace，并依赖 Postgres RLS 兜底。
- */
-function ctx(url: string): Promise<Ctx> {
-  g.__ccDbCtx ??= (async () => {
-    await runMigrations(url, (m) => console.log(m));
-    const db = getDb(url);
-    const ws = await ensureDefaultWorkspace(
-      db,
-      loadOfficialTemplates().map(({ template, raw }) => ({
-        slug: template.metadata.name,
-        name: template.metadata.displayName,
-        version: template.metadata.version,
-        description: template.metadata.description,
-        spec: template,
-        raw,
-        routine: template.spec.routine && {
-          cron: template.spec.routine.cron,
-          timezone: template.spec.routine.timezone,
-          budgetUsd: template.spec.routine.budget_usd,
-        },
-      })),
-    );
-    return { db, workspaceId: ws.id, url };
-  })().catch((err) => {
-    g.__ccDbCtx = undefined;
-    throw err;
-  });
-  return g.__ccDbCtx;
+export function todayIn(timezone: string, now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
 }
 
 function startOfToday(): Date {
@@ -79,7 +61,8 @@ type TemplateSpec = {
   };
 };
 
-export function createDbStore(url: string): Store {
+export function createDbStore(): Store {
+  const ctx = getDbContext;
   const toDraftView = (r: typeof drafts.$inferSelect, botName: string | null): DraftView => ({
     id: r.id,
     title: r.title,
@@ -97,7 +80,7 @@ export function createDbStore(url: string): Store {
     mode: "db",
 
     async getDashboard() {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const rows = await db
         .select({ bot: bots, template: botTemplates, routine: routines })
         .from(bots)
@@ -188,7 +171,7 @@ export function createDbStore(url: string): Store {
     },
 
     async triggerRun(botId, extra = {}) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId, url } = await ctx();
       const [bot] = await db
         .select()
         .from(bots)
@@ -204,7 +187,7 @@ export function createDbStore(url: string): Store {
     },
 
     async setRoutineEnabled(routineId, enabled) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const res = await db
         .update(routines)
         .set({ enabled })
@@ -218,7 +201,7 @@ export function createDbStore(url: string): Store {
     },
 
     async listInspirations(query) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const q = query?.trim();
       // TODO(v0.1/W4)：向量检索（pgvector）+ 关键词混合检索
       const filter = q
@@ -251,7 +234,7 @@ export function createDbStore(url: string): Store {
     },
 
     async addInspiration(input) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const contentHash = createHash("sha256")
         .update(input.url || input.content)
         .digest("hex");
@@ -273,7 +256,7 @@ export function createDbStore(url: string): Store {
     },
 
     async listDrafts(status?: DraftStatus) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const rows = await db
         .select({ draft: drafts, botName: bots.name })
         .from(drafts)
@@ -289,7 +272,7 @@ export function createDbStore(url: string): Store {
     },
 
     async countDraftsByStatus() {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const rows = await db
         .select({ status: drafts.status, n: sql<number>`count(*)::int` })
         .from(drafts)
@@ -299,7 +282,7 @@ export function createDbStore(url: string): Store {
     },
 
     async getDraft(id) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const [row] = await db
         .select({ draft: drafts, botName: bots.name })
         .from(drafts)
@@ -309,7 +292,7 @@ export function createDbStore(url: string): Store {
     },
 
     async reviewDraft(id, decision, note) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const [draft] = await db
         .select()
         .from(drafts)
@@ -336,7 +319,7 @@ export function createDbStore(url: string): Store {
     },
 
     async markExported(id) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const [draft] = await db
         .select()
         .from(drafts)
@@ -355,17 +338,56 @@ export function createDbStore(url: string): Store {
     },
 
     async getSettings() {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
       return ws?.settings ?? {};
     },
 
     async saveTierMapping(tiers: TierMapping) {
-      const { db, workspaceId } = await ctx(url);
+      const { db, workspaceId } = await ctx();
       const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
       const settings: WorkspaceSettings = { ...(ws?.settings ?? {}), tiers };
       await db.update(workspaces).set({ settings }).where(eq(workspaces.id, workspaceId));
       return { ok: true, message: "已保存模型档位映射" };
+    },
+
+    async listProviderCredentials() {
+      const { db, workspaceId, masterKey } = await ctx();
+      return createProviderRepo(db, masterKey).list(workspaceId);
+    },
+
+    async saveProviderCredential(input) {
+      const { db, workspaceId, masterKey } = await ctx();
+      try {
+        const view = await createProviderRepo(db, masterKey).save(workspaceId, input);
+        return {
+          ok: true,
+          message: `已保存「${view.name}」${view.maskedKey ? `（Key ${view.maskedKey}）` : ""}`,
+        };
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (/llm_provider_ws_name_idx|duplicate key/i.test(msg))
+          return { ok: false, message: `已经有名为「${input.name}」的 Provider 了` };
+        return { ok: false, message: msg };
+      }
+    },
+
+    async deleteProviderCredential(id) {
+      const { db, workspaceId, masterKey } = await ctx();
+      const ok = await createProviderRepo(db, masterKey).remove(workspaceId, id);
+      return ok
+        ? { ok: true, message: "已删除，加密保存的 Key 也一并删除" }
+        : { ok: false, message: "找不到这个 Provider" };
+    },
+
+    async getUsage(days) {
+      const { db, workspaceId } = await ctx();
+      const timezone = usageTimezone();
+      const [rows, budgets] = await Promise.all([
+        dailyUsageByBot(db, workspaceId, { days, timezone }),
+        botBudgets(db, workspaceId),
+      ]);
+      return { timezone, today: todayIn(timezone), days, rows, budgets };
     },
   };
 }

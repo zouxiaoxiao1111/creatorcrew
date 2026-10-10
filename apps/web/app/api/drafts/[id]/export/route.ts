@@ -1,14 +1,16 @@
 import { canExport } from "@creatorcrew/core/review";
 import { NextResponse } from "next/server";
 import { features } from "@/lib/env";
-import { getStore } from "@/lib/store";
+import { isApiAuthorized } from "@/lib/auth/session";
+import { unsafeStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 /** 导出 Markdown。默认只有审核通过的稿件可以导出；v0.1 不做自动发帖。 */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!(await isApiAuthorized())) return NextResponse.json({ error: "需要登录" }, { status: 401 });
   const { id } = await params;
-  const store = getStore();
+  const store = unsafeStore();
   const draft = await store.getDraft(id);
   if (!draft) return NextResponse.json({ error: "找不到这篇草稿" }, { status: 404 });
   if (!canExport(draft.status, features().requireApproval)) {

@@ -3,14 +3,14 @@ import { addInspirationAction } from "../actions";
 import { Flash, pick, type SearchParams } from "@/components/flash";
 import { SubmitButton } from "@/components/submit-button";
 import { FRESHNESS_LABEL, SOURCE_LABEL, formatTime } from "@/lib/format";
-import { getStore } from "@/lib/store";
+import { authedStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export default async function InspirationPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const q = pick(sp, "q") ?? "";
-  const items = await getStore().listInspirations(q);
+  const items = await (await authedStore("/inspiration")).listInspirations(q);
 
   return (
     <>

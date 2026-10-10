@@ -2,9 +2,18 @@ import { loadOfficialTemplates } from "@creatorcrew/agents";
 import type { TierMapping, WorkspaceSettings } from "@creatorcrew/core/domain";
 import { applyReviewDecision, type DraftStatus } from "@creatorcrew/core/review";
 import { demoDrafts, demoInspirations, demoRuns } from "./demo-data";
-import type { BotView, DraftView, InspirationView, RunView, Store } from "./types";
+import type {
+  BotView,
+  DraftView,
+  InspirationView,
+  ProviderCredentialView,
+  RunView,
+  Store,
+  UsageData,
+} from "./types";
 
 interface MemoryState {
+  providers: ProviderCredentialView[];
   bots: BotView[];
   inspirations: InspirationView[];
   drafts: DraftView[];
@@ -42,6 +51,19 @@ function initialState(): MemoryState {
         : null,
   }));
   return {
+    providers: [
+      {
+        id: "demo-provider-1",
+        name: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        tierModels: { cheap: "your-cheap-model", strong: "your-strong-model" },
+        priority: 10,
+        enabled: true,
+        hasKey: true,
+        maskedKey: "****demo",
+        updatedAt: new Date(),
+      },
+    ],
     bots,
     inspirations: demoInspirations(),
     drafts: demoDrafts(),
@@ -178,5 +200,84 @@ export const memoryStore: Store = {
   async saveTierMapping(tiers: TierMapping) {
     state().settings.tiers = tiers;
     return { ok: true, message: "已保存模型档位映射（演示模式下重启后会恢复默认）" };
+  },
+
+  async listProviderCredentials() {
+    return state().providers;
+  },
+
+  async saveProviderCredential(input) {
+    const s = state();
+    const existing = input.id ? s.providers.find((p) => p.id === input.id) : undefined;
+    if (!existing && s.providers.some((p) => p.name === input.name)) {
+      return { ok: false, message: `已经有名为「${input.name}」的 Provider 了` };
+    }
+    // 演示模式：Key 不会被保存（只记录后 4 位用于展示）
+    const masked = input.apiKey
+      ? `****${input.apiKey.slice(-4)}`
+      : input.clearKey
+        ? null
+        : (existing?.maskedKey ?? null);
+    const view: ProviderCredentialView = {
+      id: existing?.id ?? `demo-provider-${Date.now()}`,
+      name: input.name,
+      baseUrl: input.baseUrl,
+      tierModels: input.tierModels,
+      priority: input.priority ?? existing?.priority ?? 100,
+      enabled: input.enabled ?? true,
+      hasKey: Boolean(masked),
+      maskedKey: masked,
+      updatedAt: new Date(),
+    };
+    s.providers = existing
+      ? s.providers.map((p) => (p.id === existing.id ? view : p))
+      : [...s.providers, view];
+    return { ok: true, message: "演示模式：已更新列表，但 API Key 不会被保存" };
+  },
+
+  async deleteProviderCredential(id) {
+    const s = state();
+    const before = s.providers.length;
+    s.providers = s.providers.filter((p) => p.id !== id);
+    return s.providers.length < before
+      ? { ok: true, message: "已删除" }
+      : { ok: false, message: "找不到这个 Provider" };
+  },
+
+  async getUsage(days): Promise<UsageData> {
+    const timezone = process.env.CC_TIMEZONE || "Asia/Shanghai";
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const bots = state().bots;
+    const rows = Array.from({ length: Math.min(days, 5) }, (_, d) =>
+      fmt.format(new Date(Date.now() - d * 86400_000)),
+    ).flatMap((day, d) =>
+      bots.map((b, i) => ({
+        day,
+        botId: b.id,
+        botName: b.name,
+        calls: 3 + i * 2 + d,
+        failedCalls: i === 0 && d === 1 ? 1 : 0,
+        inputTokens: 1800 * (i + 1) + 300 * d,
+        outputTokens: 900 * (i + 1),
+        costUsd: Number((0.04 * (i + 1) + 0.01 * d).toFixed(4)),
+      })),
+    );
+    return {
+      timezone,
+      today: fmt.format(new Date()),
+      days,
+      rows,
+      budgets: bots.map((b) => ({
+        botId: b.id,
+        botName: b.name,
+        dailyBudgetUsd:
+          b.slug === "topic-radar" ? 0.5 : b.slug === "inspiration-curator" ? 0.2 : null,
+      })),
+    };
   },
 };

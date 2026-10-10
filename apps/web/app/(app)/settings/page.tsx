@@ -1,11 +1,13 @@
 import { MODEL_TIERS, MODEL_TIER_LABELS, formatTargetList } from "@creatorcrew/core/domain";
 import { describeProviders } from "@creatorcrew/llm";
-import { Badge, Card, PageHeader, inputClass } from "@creatorcrew/ui";
-import { saveTierMappingAction } from "../actions";
+import { Badge, Card, EmptyState, PageHeader, inputClass } from "@creatorcrew/ui";
+import { deleteProviderAction, saveTierMappingAction } from "../actions";
+import { ProviderForm } from "@/components/provider-form";
 import { Flash, pick, type SearchParams } from "@/components/flash";
 import { SubmitButton } from "@/components/submit-button";
 import { features } from "@/lib/env";
-import { getStore } from "@/lib/store";
+import { isDemoMode } from "@/lib/db-context";
+import { authedStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,12 @@ const FEATURE_LABELS: [keyof ReturnType<typeof features>, string][] = [
 
 export default async function SettingsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const settings = await getStore().getSettings();
+  const store = await authedStore("/settings");
+  const [settings, credentials] = await Promise.all([
+    store.getSettings(),
+    store.listProviderCredentials(),
+  ]);
+  const demo = isDemoMode();
   const providers = describeProviders(process.env);
   const f = features();
 
@@ -33,9 +40,77 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       />
       <Flash msg={pick(sp, "msg")} error={pick(sp, "error")} />
 
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold">模型 Provider 凭据</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              这里保存的 Provider
+              优先于环境变量里的同名配置。档位映射为空时，按优先级（数字越小越优先）使用这里填写的模型。
+            </p>
+          </div>
+          {demo ? (
+            <Badge tone="amber">演示模式：Key 不会被保存</Badge>
+          ) : (
+            <Badge tone="green">AES-256-GCM 加密存储</Badge>
+          )}
+        </div>
+        <div className="mt-4 space-y-3">
+          {credentials.length === 0 ? (
+            <EmptyState
+              title="还没有保存任何 Provider"
+              description="在下面添加第一个，例如 OpenAI 兼容接口、OpenRouter 或本地 Ollama"
+            />
+          ) : (
+            credentials.map((p) => (
+              <details key={p.id} className="group rounded-lg border border-zinc-200">
+                <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                  <span className="font-mono font-medium text-zinc-900">{p.name}</span>
+                  <span className="truncate font-mono text-xs text-zinc-500">{p.baseUrl}</span>
+                  <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                    {Object.keys(p.tierModels).map((t) => (
+                      <Badge key={t} tone="blue">
+                        {t}
+                      </Badge>
+                    ))}
+                    <Badge tone={p.hasKey ? "zinc" : "amber"}>{p.maskedKey ?? "无 Key"}</Badge>
+                    {p.enabled ? null : <Badge tone="red">已停用</Badge>}
+                  </span>
+                </summary>
+                <div className="space-y-4 border-t border-zinc-100 px-4 py-4">
+                  <ProviderForm provider={p} />
+                  <form action={deleteProviderAction} className="border-t border-zinc-100 pt-3">
+                    <input type="hidden" name="id" value={p.id} />
+                    <SubmitButton
+                      size="sm"
+                      variant="ghost"
+                      className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      pendingText="删除中…"
+                    >
+                      删除这个 Provider（连同已保存的 Key）
+                    </SubmitButton>
+                  </form>
+                </div>
+              </details>
+            ))
+          )}
+        </div>
+        <details
+          className="mt-4 rounded-lg border border-dashed border-zinc-300"
+          open={credentials.length === 0}
+        >
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-zinc-700">
+            ＋ 添加 Provider
+          </summary>
+          <div className="border-t border-zinc-100 px-4 py-4">
+            <ProviderForm />
+          </div>
+        </details>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card>
-          <h2 className="text-sm font-semibold">模型档位映射</h2>
+          <h2 className="text-sm font-semibold">模型档位映射（高级，可选）</h2>
           <p className="mt-1 text-xs text-zinc-500">
             每行或用逗号分隔一个 <code className="font-mono">provider:model</code>，按顺序作为
             fallback 链：第一个报错或限流时自动切到下一个。
